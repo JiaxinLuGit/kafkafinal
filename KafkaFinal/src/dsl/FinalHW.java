@@ -43,24 +43,24 @@ public class FinalHW {
 		//user和order的组合表
 		KTable<Windowed<String>, String> kTable = orderStream
 				.leftJoin(userTable, (Order order, User user) -> OrderUser.fromOrderUser(order, user), Serdes.String(), SerdesFactory.serdFrom(Order.class))
-				//筛�?�出年龄�?18�?35之间的userorder
+				//筛选出年龄在18到35岁之间的userorder
 				.filter((String userName, OrderUser orderUser) -> orderUser.age>18 && orderUser.age<35)
-				//把商品名字符串作为键，订单和用户的连接流作为�?
+				//把商品名字符串作为键，订单和用户的连接流作为值
 				.map((String userName, OrderUser orderUser) -> new KeyValue<String, OrderUser>(orderUser.itemName, orderUser))
 				.through(Serdes.String(), SerdesFactory.serdFrom(OrderUser.class), (String key, OrderUser orderUser, int numPartitions) -> (orderUser.getItemName().hashCode() & 0x7FFFFFFF) % numPartitions, "orderuser-repartition-by-item")
 				//订单和用户的连接流与商品表连接形成订单用户商品表，其中OrderUserItem类除了有原来1个流两个表中的信息外，还添加了一个销售额的属性，在创建对象时用quantity*itemPrice计算
 				.leftJoin(itemTable, (OrderUser orderUser, Item item) -> OrderUserItem.fromOrderUser(orderUser, item), Serdes.String(), SerdesFactory.serdFrom(OrderUser.class))
-				//把商品类别作为新的键，OrderUserItem作为值做�?次map
+				//把商品类别作为新的键，OrderUserItem作为值做1次map
 				.map((String item, OrderUserItem orderUserItem) ->new KeyValue<String, OrderUserItem>(orderUserItem.itemType, orderUserItem))
-				//用商品分类分�?
+				//用商品分类分组
 				.groupByKey()
-				//求出每种商品分类�?售额�?10的订�?
+				//求出每种商品分类销售额前10的订单
 				.aggregate(
-						//初始值，�?个空的top10容器对象
+						//初始值，1个空的top10容器对象
 						()->new Top10(), 
-						//聚合�?
+						//聚合用于排序求前10
 						(category,osi,top)->{
-							//把新来的OrderUserItem放到容器列表�?11个位�?
+							//把新来的OrderUserItem放到容器列表的第11个位置
 							top.list[11]=osi;
 							//对列表按照销售额进行排序
 							Arrays.sort(
@@ -69,34 +69,34 @@ public class FinalHW {
 										return Double.compare(b.orderCost,a.orderCost);
 									}
 									);
-							//把第11个位置清�?
+							//把第11个位置清空
 							top.list[11]=null;
 							//返回容器对象
 							return top;
 						}, 
-						//�?5秒输出一次，每次输出1小时的结�?
+						//每5秒输出一次，每次输出1小时的结果
 						TimeWindows.of(6000*60).advanceBy(5000), 
 						//容器类的Serde
 						SerdesFactory.serdFrom(Top10.class), 
 						"aggreStroe")
 				
-				//把各个类别求出的�?10订单映射为字符串，一个订单一�?
+				//把各个类别求出的10订单映射为字符串，一个订单一行
 				.mapValues(top->{
-					//用于拼接10个订�?
+					//用于拼接10个订单
 					StringBuffer sb=new StringBuffer();
-					//�?10个排名的订单进行拼接
+					//对10个排名的订单进行拼接
 					for(int i=0;i<10;i++){
 						//窗口结束时间
 						long end=top.list[i].getTransactionDate();
-						//窗口�?始时�?
+						//窗口开始时间
 						long start=end-3600;
-						//窗口字符�?
+						//窗口字符串
 					    String window=end+" "+start;
 					    //拼接该订单其他属性，用i+1作为排名
 						String tmp=window+top.list[i].getItemType()+" "+top.list[i].getItemName()+" "+top.list[i].getQuantity()+" "+top.list[i].getItemPrice()+" "+top.list[i].getOrderCost()+" "+(i+1);
 						//把该订单信息拼入StringBuffer
 						sb.append(tmp);
-						//添加�?个换行符
+						//添加1个换行符
 						sb.append("\n");
 					}
 					return sb.toString();
@@ -112,7 +112,8 @@ public class FinalHW {
 		kafkaStreams.close();
 		kafkaStreams.cleanUp();
 	}
-
+	
+	//TOP10容器类
 	public static class Top10{
 		//用于盛放和排序的OrderUserItem列表
 		public OrderUserItem[] list=new OrderUserItem[11];
